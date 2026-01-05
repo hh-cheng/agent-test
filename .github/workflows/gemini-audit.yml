@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - '**'  # 这会触发所有分支（含带 / 的分支名）的 PR 审计
+      - '**' # 触发所有分支的 PR 审计
 
 jobs:
   audit:
@@ -12,25 +12,26 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 获取完整历史以便对比 diff
 
       - name: Setup Node.js environment
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '22'  # 根据需要调整 Node.js 版本
+          node-version: '22'
 
       - name: Install dependencies
         run: |
           corepack enable
-          pnpm install --no-frozen-lockfile # 或者你使用的其他包管理命令（如 pnpm）
+          pnpm install --no-frozen-lockfile
 
       - name: Prepare PR diff
         run: |
+          # 获取 base 分支并生成 diff 文件
           git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           git diff origin/${{ github.event.pull_request.base.ref }}...${{ github.sha }} > pr.diff
 
@@ -41,10 +42,19 @@ jobs:
       - name: Run Gemini Audit
         if: ${{ github.event.pull_request.head.repo.fork == false }}
         run: |
-          # 假设你已经设置了 Gemini 审计工具的命令行接口（CLI），你可以在这里调用它
-          gemini audit --input pr.diff --config .github/ai-review-rubric.md > gemini_audit_report.txt
+          # 1. 构造 Prompt：合并审计规则和代码差异
+          echo "你是一个资深的 Next.js 开发者和安全专家。请根据以下审计规则对代码差异进行评审。" > prompt.txt
+          echo "### 审计规则：" >> prompt.txt
+          cat .github/ai-review-rubric.md >> prompt.txt
+          echo -e "\n### 代码差异 (Diff)：" >> prompt.txt
+          cat pr.diff >> prompt.txt
+          
+          # 2. 调用 Gemini CLI
+          # -y: 自动接受所有操作，不进入交互模式
+          # 我们通过管道将 prompt.txt 的内容传给 gemini
+          cat prompt.txt | gemini -y > gemini_audit_report.txt
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 用你自己的 API 密钥
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Post audit results as comment
         if: ${{ github.event.pull_request.head.repo.fork == false }}
@@ -52,10 +62,14 @@ jobs:
         with:
           script: |
             const fs = require("fs");
-            const body = fs.readFileSync("gemini_audit_report.txt", "utf8");
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body,
-            });
+            if (fs.existsSync("gemini_audit_report.txt")) {
+              const body = fs.readFileSync("gemini_audit_report.txt", "utf8");
+              if (body.trim()) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  body: "### 🤖 Gemini 代码审计报告\n\n" + body,
+                });
+              }
+            }
