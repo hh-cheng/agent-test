@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - '*'  # 这会触发所有分支的 PR 审计，包括从任何分支提交的 PR
+      - '**'  # 这会触发所有分支（含带 / 的分支名）的 PR 审计
 
 jobs:
   audit:
