@@ -1,36 +1,42 @@
-import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
+import NextAuth from 'next-auth'
+import CredentialsProvider from 'next-auth/providers/credentials'
+
+const nextAuthSecret = process.env.NEXTAUTH_SECRET
+
+if (!nextAuthSecret) {
+  throw new Error('Missing NEXTAUTH_SECRET environment variable.')
+}
 
 const handler = NextAuth({
   providers: [
     CredentialsProvider({
-      name: "Credentials",
+      name: 'Credentials',
       credentials: {
-        username: { label: "Username", type: "text" },
-        password: { label: "Password", type: "password" },
+        username: { label: 'Username', type: 'text' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const username = credentials?.username;
-        const password = credentials?.password;
+        const username = credentials?.username
+        const password = credentials?.password
 
-        if (username === "test123" && password === "testpwd123!") {
+        if (username === 'test123' && password === 'testpwd123!') {
           return {
-            id: "demo-user",
-            name: "Test User",
-          };
+            id: 'demo-user',
+            name: 'Test User',
+          }
         }
 
-        return null;
+        return null
       },
     }),
   ],
   session: {
-    strategy: "jwt",
+    strategy: 'jwt',
   },
-  secret: "dev-secret-change-me",
+  secret: nextAuthSecret,
   pages: {
-    signIn: "/",
+    signIn: '/',
   },
-});
+})
 
-export { handler as GET, handler as POST };
+export { handler as GET, handler as POST }

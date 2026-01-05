@@ -1,81 +1,83 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { useState } from 'react'
+import { signIn, signOut, useSession } from 'next-auth/react'
 
 type TodoItem = {
-  id: string;
-  text: string;
-  completed: boolean;
-};
+  id: string
+  text: string
+  completed: boolean
+}
 
 const demoCredentials = {
-  username: "test123",
-  password: "testpwd123!",
-};
+  username: 'test123',
+  password: 'testpwd123!',
+}
 
 export function TodoApp() {
-  const { data: session, status } = useSession();
-  const [formState, setFormState] = useState(demoCredentials);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [todos, setTodos] = useState<TodoItem[]>([]);
-  const [newTodo, setNewTodo] = useState("");
+  const { data: session, status } = useSession()
+  const [formState, setFormState] = useState(demoCredentials)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [todos, setTodos] = useState<TodoItem[]>([])
+  const [newTodo, setNewTodo] = useState('')
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setErrorMessage(null);
-    const result = await signIn("credentials", {
+    event.preventDefault()
+    setErrorMessage(null)
+    const result = await signIn('credentials', {
       redirect: false,
       username: formState.username,
       password: formState.password,
-    });
+    })
 
     if (!result?.ok) {
-      setErrorMessage("账号或密码不正确。");
+      setErrorMessage('账号或密码不正确。')
     }
-  };
+  }
 
   const addTodo = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = newTodo.trim();
+    event.preventDefault()
+    const trimmed = newTodo.trim()
     if (!trimmed) {
-      return;
+      return
     }
     setTodos((prev) => [
       { id: crypto.randomUUID(), text: trimmed, completed: false },
       ...prev,
-    ]);
-    setNewTodo("");
-  };
+    ])
+    setNewTodo('')
+  }
 
   const toggleTodo = (id: string) => {
     setTodos((prev) =>
       prev.map((todo) =>
         todo.id === id ? { ...todo, completed: !todo.completed } : todo,
       ),
-    );
-  };
+    )
+  }
 
   const removeTodo = (id: string) => {
-    setTodos((prev) => prev.filter((todo) => todo.id !== id));
-  };
+    setTodos((prev) => prev.filter((todo) => todo.id !== id))
+  }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-6 py-12 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-sky-100 px-6 py-12 font-sans text-zinc-900 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950 dark:text-zinc-50">
       <main className="w-full max-w-2xl space-y-10 rounded-3xl bg-white p-10 shadow-xl shadow-zinc-200/40 dark:bg-zinc-900 dark:shadow-none">
         <header className="space-y-3">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">
             TODO LIST
           </p>
           <h1 className="text-3xl font-semibold leading-tight">
-            {session ? "欢迎回来，开始整理今天的任务吧。" : "请先登录以查看你的 TODO list。"}
+            {session
+              ? '欢迎回来，开始整理今天的任务吧。'
+              : '请先登录以查看你的 TODO list。'}
           </h1>
           <p className="text-base text-zinc-500">
             使用 NextAuth 的 Credentials 登录，账号与密码已预填。
           </p>
         </header>
 
-        {status === "loading" ? (
+        {status === 'loading' ? (
           <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-zinc-500 dark:border-zinc-700">
             正在检查登录状态…
           </div>
@@ -95,7 +97,10 @@ export function TodoApp() {
                   退出登录
                 </button>
               </div>
-              <form onSubmit={addTodo} className="flex flex-col gap-3 sm:flex-row">
+              <form
+                onSubmit={addTodo}
+                className="flex flex-col gap-3 sm:flex-row"
+              >
                 <input
                   value={newTodo}
                   onChange={(event) => setNewTodo(event.target.value)}
@@ -132,9 +137,7 @@ export function TodoApp() {
                         />
                         <span
                           className={
-                            todo.completed
-                              ? "text-zinc-400 line-through"
-                              : ""
+                            todo.completed ? 'text-zinc-400 line-through' : ''
                           }
                         >
                           {todo.text}
@@ -208,5 +211,5 @@ export function TodoApp() {
         )}
       </main>
     </div>
-  );
+  )
 }
