@@ -1,0 +1,61 @@
+name: Gemini Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - '*'  # 这会触发所有分支的 PR 审计，包括从任何分支提交的 PR
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'  # 根据需要调整 Node.js 版本
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install # 或者你使用的其他包管理命令（如 pnpm）
+
+      - name: Prepare PR diff
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          git diff origin/${{ github.event.pull_request.base.ref }}...${{ github.sha }} > pr.diff
+
+      - name: Install Gemini CLI
+        run: |
+          npm install -g @google/gemini-cli
+
+      - name: Run Gemini Audit
+        if: ${{ github.event.pull_request.head.repo.fork == false }}
+        run: |
+          # 假设你已经设置了 Gemini 审计工具的命令行接口（CLI），你可以在这里调用它
+          gemini audit --input pr.diff --config .github/ai-review-rubric.md > gemini_audit_report.txt
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 用你自己的 API 密钥
+
+      - name: Post audit results as comment
+        if: ${{ github.event.pull_request.head.repo.fork == false }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const body = fs.readFileSync("gemini_audit_report.txt", "utf8");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
