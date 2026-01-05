@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           corepack enable
-          pnpm install # 或者你使用的其他包管理命令（如 pnpm）
+          pnpm install --no-frozen-lockfile # 或者你使用的其他包管理命令（如 pnpm）
 
       - name: Prepare PR diff
         run: |
