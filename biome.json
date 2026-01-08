@@ -1,7 +1,16 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
-  "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "ignoreUnknown": false },
+  "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/.turbo",
+      "!**/.next",
+      "!**/dist",
+      "!**/next-env.d.ts"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
@@ -16,9 +25,12 @@
     "useEditorconfig": true,
     "includes": [
       "**",
+      "**/*.css",
       "!**/.vercel",
       "!**/.next",
       "!**/.vscode",
+      "!**/.turbo",
+      "!**/dist",
       "!**/node_modules",
       "!**/pnpm-lock.yaml"
     ]
@@ -58,11 +70,7 @@
       "**/*.js",
       "**/*.json",
       "**/*.mjs",
-      "prisma/client/**",
-      "**",
-      "**/*.js",
-      "**/*.json",
-      "**/*.mjs",
+      "**/*.css",
       "prisma/client/**"
     ]
   },
@@ -80,6 +88,20 @@
     }
   },
   "html": { "formatter": { "selfCloseVoidElements": "always" } },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    },
+    "formatter": {
+      "enabled": true,
+      "indentStyle": "space",
+      "indentWidth": 2,
+      "lineEnding": "lf",
+      "lineWidth": 80,
+      "quoteStyle": "double"
+    },
+    "linter": { "enabled": true }
+  },
   "overrides": [
     {
       "includes": ["*.ts", "*.tsx", "*.mts", "*.cts"],

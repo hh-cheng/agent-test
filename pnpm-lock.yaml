@@ -19,7 +19,7 @@ importers:
         version: 19.2.3(react@19.2.3)
     devDependencies:
       '@biomejs/biome':
-        specifier: ^2.3.2
+        specifier: ^2.3.11
         version: 2.3.11
       '@commitlint/config-conventional':
         specifier: ^20.3.0
