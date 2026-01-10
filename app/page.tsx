@@ -3,11 +3,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 
+type Priority = "high" | "medium" | "low";
+
 type Todo = {
   id: string;
   title: string;
   completed: boolean;
   createdAt: string;
+  priority: Priority;
   children: Todo[];
 };
 
@@ -59,6 +62,12 @@ const normalizeTodos = (raw: unknown): Todo[] => {
       typeof item?.createdAt === "string"
         ? (item.createdAt as string)
         : new Date().toISOString(),
+    priority:
+      (["high", "medium", "low"] as const).includes(
+        (item as { priority?: Priority })?.priority ?? "medium",
+      )
+        ? ((item as { priority?: Priority })?.priority as Priority)
+        : "medium",
     children: normalizeTodos((item as { children?: unknown })?.children ?? []),
   }));
 };
@@ -125,6 +134,22 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString();
+};
+
+const priorityMeta: Record<Priority, { label: string; classes: string }> = {
+  high: {
+    label: "高",
+    classes:
+      "border-amber-300 bg-amber-50 text-amber-700",
+  },
+  medium: {
+    label: "中",
+    classes: "border-slate-200 bg-slate-50 text-slate-700",
+  },
+  low: {
+    label: "低",
+    classes: "border-sky-200 bg-sky-50 text-sky-700",
+  },
 };
 
 const reorderWithinParent = (
@@ -246,6 +271,42 @@ const deleteChildrenBatch = (
   return [changed ? next : list, changed];
 };
 
+const updateChildrenPriorityBatch = (
+  list: Todo[],
+  parentId: string,
+  childIds: Set<string>,
+  priority: Priority,
+): [Todo[], boolean] => {
+  let changed = false;
+
+  const next = list.map((todo) => {
+    if (todo.id === parentId) {
+      const children = todo.children.map((child) => {
+        if (!childIds.has(child.id)) return child;
+        changed = true;
+        return { ...child, priority };
+      });
+      return reconcileCompletion({ ...todo, children });
+    }
+
+    const [childList, childChanged] = updateChildrenPriorityBatch(
+      todo.children,
+      parentId,
+      childIds,
+      priority,
+    );
+
+    if (childChanged) {
+      changed = true;
+      return reconcileCompletion({ ...todo, children: childList });
+    }
+
+    return todo;
+  });
+
+  return [changed ? next : list, changed];
+};
+
 const collectStats = (
   list: Todo[],
 ): {
@@ -303,6 +364,7 @@ export default function HomePage() {
         title,
         completed: false,
         createdAt: new Date().toISOString(),
+        priority: "medium",
         children: [],
       },
     ];
@@ -354,6 +416,7 @@ export default function HomePage() {
             title,
             completed: todo.completed,
             createdAt: new Date().toISOString(),
+            priority: "medium",
             children: [],
           },
         ],
@@ -397,6 +460,33 @@ export default function HomePage() {
         current,
         parentId,
         targetIds,
+      );
+      return changed ? reconcileTree(next) : current;
+    });
+  };
+
+  const handleUpdatePriority = (id: string, priority: Priority) => {
+    setTodos((current) => {
+      const [next, changed] = updateTodos(current, id, (todo) => ({
+        ...todo,
+        priority,
+      }));
+      return changed ? next : current;
+    });
+  };
+
+  const handleBatchPriority = (
+    parentId: string,
+    childIds: string[],
+    priority: Priority,
+  ) => {
+    const targetIds = new Set(childIds);
+    setTodos((current) => {
+      const [next, changed] = updateChildrenPriorityBatch(
+        current,
+        parentId,
+        targetIds,
+        priority,
       );
       return changed ? reconcileTree(next) : current;
     });
@@ -513,6 +603,8 @@ export default function HomePage() {
                 onReorder={handleReorderChildren}
                 onBatchComplete={handleBatchComplete}
                 onBatchDelete={handleBatchDelete}
+                onUpdatePriority={handleUpdatePriority}
+                onBatchPriority={handleBatchPriority}
               />
             ))
           )}
@@ -532,6 +624,12 @@ type TodoItemProps = {
   onReorder: (parentId: string, sourceId: string, targetId: string) => void;
   onBatchComplete: (parentId: string, childIds: string[]) => void;
   onBatchDelete: (parentId: string, childIds: string[]) => void;
+  onUpdatePriority: (id: string, priority: Priority) => void;
+  onBatchPriority: (
+    parentId: string,
+    childIds: string[],
+    priority: Priority,
+  ) => void;
 };
 
 function TodoItem({
@@ -544,12 +642,18 @@ function TodoItem({
   onReorder,
   onBatchComplete,
   onBatchDelete,
+  onUpdatePriority,
+  onBatchPriority,
 }: TodoItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(todo.title);
   const [childTitle, setChildTitle] = useState("");
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [draggingChildId, setDraggingChildId] = useState<string | null>(null);
+  const [childFilter, setChildFilter] = useState<"all" | "active" | "completed">(
+    "all",
+  );
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     setDraft(todo.title);
@@ -560,6 +664,10 @@ function TodoItem({
       current.filter((id) => todo.children.some((child) => child.id === id)),
     );
   }, [todo.children]);
+
+  useEffect(() => {
+    setSelectedChildIds([]);
+  }, [childFilter, searchTerm]);
 
   const saveEdit = () => {
     const title = draft.trim();
@@ -584,7 +692,7 @@ function TodoItem({
   };
 
   const selectAllChildren = () => {
-    setSelectedChildIds(todo.children.map((child) => child.id));
+    setSelectedChildIds(visibleChildren.map((child) => child.id));
   };
 
   const clearSelection = () => setSelectedChildIds([]);
@@ -598,6 +706,12 @@ function TodoItem({
   const handleBatchDeleteClick = () => {
     if (!selectedChildIds.length) return;
     onBatchDelete(todo.id, selectedChildIds);
+    clearSelection();
+  };
+
+  const handleBatchPriorityClick = (priority: Priority) => {
+    if (!selectedChildIds.length) return;
+    onBatchPriority(todo.id, selectedChildIds, priority);
     clearSelection();
   };
 
@@ -621,6 +735,17 @@ function TodoItem({
 
   const completedChildren = todo.children.filter((child) => child.completed).length;
   const totalChildren = todo.children.length;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const visibleChildren = todo.children.filter((child) => {
+    const matchesFilter =
+      childFilter === "all" ||
+      (childFilter === "active" && !child.completed) ||
+      (childFilter === "completed" && child.completed);
+    const matchesSearch =
+      !normalizedSearch || child.title.toLowerCase().includes(normalizedSearch);
+    return matchesFilter && matchesSearch;
+  });
+  const visibleChildrenCount = visibleChildren.length;
   const progressPercent =
     totalChildren === 0
       ? 0
@@ -662,6 +787,29 @@ function TodoItem({
               <p className="text-xs text-slate-500">
                 创建时间：{formatDate(todo.createdAt)}
               </p>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <PriorityBadge priority={todo.priority} />
+                <span className="text-[11px] text-slate-500">调整为</span>
+                <div className="flex gap-1">
+                  {(["high", "medium", "low"] as const).map((priority) => {
+                    const active = todo.priority === priority;
+                    return (
+                      <button
+                        key={priority}
+                        type="button"
+                        onClick={() => onUpdatePriority(todo.id, priority)}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition ${
+                          active
+                            ? `${priorityMeta[priority].classes} border-dashed`
+                            : "border-slate-200 text-slate-700 hover:bg-white"
+                        }`}
+                      >
+                        {priorityMeta[priority].label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {totalChildren ? (
                 <div className="space-y-2 rounded-lg bg-slate-50 p-3">
                   <div className="flex items-center justify-between text-xs">
@@ -748,7 +896,41 @@ function TodoItem({
 
         {totalChildren ? (
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
+              <span className="text-xs font-semibold text-slate-700">
+                子 TODO 过滤
+              </span>
+              {[
+                { value: "all", label: "全部" },
+                { value: "active", label: "仅未完成" },
+                { value: "completed", label: "仅已完成" },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() =>
+                    setChildFilter(item.value as "all" | "active" | "completed")
+                  }
+                  className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                    childFilter === item.value
+                      ? "border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+                      : "border border-slate-200 text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="搜索子 TODO 标题"
+                className="w-full max-w-xs rounded-md border border-slate-200 px-3 py-1 text-xs outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+              <span className="text-[11px] text-slate-500">
+                显示 {visibleChildrenCount} / {totalChildren}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-slate-700">
                 子 TODO 批量操作
               </span>
@@ -757,7 +939,7 @@ function TodoItem({
                 onClick={selectAllChildren}
                 className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-white"
               >
-                全选
+                全选(当前筛选)
               </button>
               <button
                 type="button"
@@ -767,9 +949,9 @@ function TodoItem({
                 清空
               </button>
               <span className="text-[11px] text-slate-500">
-                已选 {selectedChildIds.length} / {totalChildren}
+                已选 {selectedChildIds.length} / {visibleChildrenCount || totalChildren}
               </span>
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={!selectedChildIds.length}
@@ -786,6 +968,30 @@ function TodoItem({
                 >
                   批量删除
                 </button>
+                <button
+                  type="button"
+                  disabled={!selectedChildIds.length}
+                  onClick={() => handleBatchPriorityClick("high")}
+                  className="rounded-md border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  标记高优先级
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedChildIds.length}
+                  onClick={() => handleBatchPriorityClick("medium")}
+                  className="rounded-md border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  标记中优先级
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedChildIds.length}
+                  onClick={() => handleBatchPriorityClick("low")}
+                  className="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  标记低优先级
+                </button>
               </div>
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
@@ -796,7 +1002,12 @@ function TodoItem({
 
         {totalChildren ? (
           <div className="space-y-3 border-l border-dashed border-slate-200 pl-4">
-            {todo.children.map((child) => {
+            {visibleChildren.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
+                当前筛选/搜索无匹配的子 TODO。
+              </div>
+            ) : null}
+            {visibleChildren.map((child) => {
               const selected = selectedChildIds.includes(child.id);
               const isDragging = draggingChildId === child.id;
               return (
@@ -841,6 +1052,8 @@ function TodoItem({
                         onReorder={onReorder}
                         onBatchComplete={onBatchComplete}
                         onBatchDelete={onBatchDelete}
+                        onUpdatePriority={onUpdatePriority}
+                        onBatchPriority={onBatchPriority}
                       />
                     </div>
                   </div>
@@ -851,5 +1064,16 @@ function TodoItem({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: Priority }) {
+  const meta = priorityMeta[priority];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${meta.classes}`}
+    >
+      优先级：{meta.label}
+    </span>
   );
 }
