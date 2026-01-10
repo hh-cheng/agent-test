@@ -1,5 +1,8 @@
-Built a client-side nested TODO experience with full parent/child CRUD, completion cascade and auto-complete logic, per-item child add/edit/delete, creation timestamps, and storage normalization to safely load old flat data while persisting to `localStorage`; added session display and sign-out control in the protected header to surface login state (app/page.tsx).
+**Changes**
+- Added tree helpers in `app/page.tsx` to support child todo drag reordering plus batch complete/delete while keeping completion reconciliation intact for parents and descendants.
+- Reworked todo cards to surface child progress (counts and bar), show login identity, and preserve nested CRUD; parents now expose selection controls and batch buttons with selection cleanup when children change.
+- Introduced draggable handles and selection checkboxes alongside each child todo so order changes persist to storage and bulk actions are easily discoverable.
 
-Testing: Not run (not requested).
+- Tests: Not run (not requested)
 
-You may want to run `pnpm dev` to sanity-check the updated UI locally.
+Next steps: 1) Run `pnpm lint:check` to ensure type/lint coverage. 2) Manually verify drag-sorting and batch operations on multiple nesting levels in the browser.
