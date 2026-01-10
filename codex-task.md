@@ -51,4 +51,4 @@
 
 
 # Trigger
-Auto-run on push to codex/update
+Auto-run on push to main

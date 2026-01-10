@@ -1,9 +1,7 @@
-No changes were needed—the repo already matches the requested features.
+现有代码已覆盖你的需求，无需再改动。关键实现位置：
+- 嵌套 TODO 结构与子项 CRUD、批量操作、拖拽排序、进度展示已在 `app/page.tsx` 完成；包含递归 `Todo` 结构、`reconcileTree` 完成状态同步、批量完成/删除与拖拽重排逻辑以及父级进度条与层级缩进展示。
+- next-auth 已接入：`app/api/auth/[...nextauth]/route.ts` 定义了固定账号密码登录和会话字段；`app/login/page.tsx` 提供登录表单与错误提示；`middleware.ts` 保护除 `/login` 与 auth 之外的页面并引导未登录用户；`app/layout.tsx` 与 `app/providers.tsx` 包裹 `SessionProvider`，主页 `app/page.tsx` 显示当前用户并支持登出。
 
-- `app/page.tsx`: Hierarchical todos with `children`, CRUD for parent/child, completion propagation both directions, localStorage migration (`nested-todos` fallback to old key), drag-handle reorder within a parent, batch complete/delete, and visible child progress + counts on each parent card.
-- `app/api/auth/[...nextauth]/route.ts`: next-auth credentials provider wired to fixed account (`todolistusername`/`todolistpwd`), session/jwt callbacks populate username.
-- `app/login/page.tsx`: Dedicated login form with username/password fields, error messaging, redirect on success, and helper badge showing the fixed credentials.
-- `middleware.ts`: Protects all pages except auth/static/login, redirecting unauthenticated users to `/login`; `app/layout.tsx` + `app/providers.tsx` wrap everything in `SessionProvider`.
-- UI shows current user and logout button in the header, and TODO list visually distinguishes parent/child items with indentation, drag handles, bulk action bar, and progress bar.
+测试：未运行（未请求）。
 
-Tests not run (not requested). If you’d like, I can demo flows or add automated checks.
+你可以直接 `pnpm dev` 体验登录与嵌套 TODO 功能。
