@@ -1,8 +1,9 @@
-**Changes**
-- Added tree helpers in `app/page.tsx` to support child todo drag reordering plus batch complete/delete while keeping completion reconciliation intact for parents and descendants.
-- Reworked todo cards to surface child progress (counts and bar), show login identity, and preserve nested CRUD; parents now expose selection controls and batch buttons with selection cleanup when children change.
-- Introduced draggable handles and selection checkboxes alongside each child todo so order changes persist to storage and bulk actions are easily discoverable.
+No changes were needed—the repo already matches the requested features.
 
-- Tests: Not run (not requested)
+- `app/page.tsx`: Hierarchical todos with `children`, CRUD for parent/child, completion propagation both directions, localStorage migration (`nested-todos` fallback to old key), drag-handle reorder within a parent, batch complete/delete, and visible child progress + counts on each parent card.
+- `app/api/auth/[...nextauth]/route.ts`: next-auth credentials provider wired to fixed account (`todolistusername`/`todolistpwd`), session/jwt callbacks populate username.
+- `app/login/page.tsx`: Dedicated login form with username/password fields, error messaging, redirect on success, and helper badge showing the fixed credentials.
+- `middleware.ts`: Protects all pages except auth/static/login, redirecting unauthenticated users to `/login`; `app/layout.tsx` + `app/providers.tsx` wrap everything in `SessionProvider`.
+- UI shows current user and logout button in the header, and TODO list visually distinguishes parent/child items with indentation, drag handles, bulk action bar, and progress bar.
 
-Next steps: 1) Run `pnpm lint:check` to ensure type/lint coverage. 2) Manually verify drag-sorting and batch operations on multiple nesting levels in the browser.
+Tests not run (not requested). If you’d like, I can demo flows or add automated checks.
