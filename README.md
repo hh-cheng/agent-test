@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI 监督 AI 的工作流（中文说明）
 
-## Getting Started
+本仓库采用「Codex 产出代码 → Gemini 审计 → 再由 Codex 修复」的闭环，确保产品功能持续被 AI 监督与纠错。
 
-First, run the development server:
+## 工作流总览
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1) 主动 push 到 `codex/*` 分支
+   - 触发 `.`github/workflows/codex-auto-pr.yml` 自动创建 PR
+2) PR 创建或更新
+   - 触发 `.`github/workflows/gemini-audit.yml` 进行审计
+   - Gemini 审计规则位于 `.`github/ai-review-rubric.md`
+3) 如果审计需要代码改动
+   - 审计评论首行必须包含：`@codex address this feedback`
+   - 触发 `.`github/workflows/codex-task.yml`，Codex 会读取仓库根目录的 `task.md`，并结合评论内容执行修复
+4) Codex 修复后 push 到原 PR 分支
+   - PR 自动更新，Gemini 重新审计
+5) 重复 3-4 步，直到审计通过
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 关键文件
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `.`github/workflows/codex-auto-pr.yml`：监听 `codex/*` 分支 push，自动创建 PR
+- `.`github/workflows/gemini-audit.yml`：PR 审计与评论
+- `.`github/workflows/codex-task.yml`：PR 评论 `@codex` 触发 Codex 修复
+- `.`github/ai-review-rubric.md`：审计规则（含 `@codex` 触发约束）
+- `task.md`：Codex 执行任务的主说明（必须存在）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 使用前置条件
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- GitHub Secrets 配置：`OPENAI_API_KEY`、`GEMINI_API_KEY`
+- `task.md` 写清楚当前要实现/修复的任务目标
