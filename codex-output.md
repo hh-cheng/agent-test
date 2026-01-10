@@ -1,8 +1,5 @@
-**Changes**
-- Expanded todo model in `app/page.tsx` to include a persisted `priority` field with safe normalization/defaults for existing local data.
-- Added per-item priority badges and quick selectors (including children), keeping parent/child completion logic intact while allowing single and batch priority updates.
-- Introduced child-level filters (all/未完成/已完成), search, and enhanced batch controls (complete/delete/priority) with visibility counts and updated selection behavior.
-- Refined child list rendering to respect filter/search results and communicate empty states while preserving drag-to-reorder and progress visuals.
+- Repository already matches the requested features: `app/page.tsx` implements nested parent/child TODOs with `priority`, full CRUD, completion propagation, drag-handle reordering, batch complete/delete/priority, per-parent progress bar, status filters (全部/未完成/已完成), search, and storage normalization (`nested-todos` with legacy key fallback).
+- Auth flow is wired with fixed credentials in `app/api/auth/[...nextauth]/route.ts` (next-auth credentials provider, JWT session) plus route protection in `middleware.ts` redirecting unauthenticated users to `/login`.
+- Login experience in `app/login/page.tsx` shows the fixed credentials, handles error messaging on bad input, and uses `signIn`; the main page header surfaces the signed-in user and provides `signOut` (`app/page.tsx` + `app/layout.tsx`/`providers.tsx` for session context).
 
-**Testing**
-- Not run (not requested).
+Tests: Not run (not requested).
