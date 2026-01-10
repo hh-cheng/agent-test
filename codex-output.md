@@ -1,9 +1,5 @@
-**Changes**
-- Replaced `app/page.tsx` with a client-side nested TODO experience: parent/child CRUD, inline editing, completion propagation (parent toggles cascade to children; all children complete auto-finishes parent), localStorage migration-safe normalization, and clear hierarchy styling with creation timestamps and per-item child adders.
-- Added NextAuth credentials auth (`app/api/auth/[...nextauth]/route.ts`, `middleware.ts`, `app/providers.tsx`), protecting all core pages, surfacing session info plus sign-out in the TODO header, and redirecting unauthenticated users to login.
-- Built a dedicated `/login` page (`app/login/page.tsx`) with username/password fields, fixed credentials, loading/error states, and visual guidance; updated layout metadata for the authenticated app.
-- Declared `next-auth` dependency in `package.json` for the new auth flow.
+Built a client-side nested TODO experience with full parent/child CRUD, completion cascade and auto-complete logic, per-item child add/edit/delete, creation timestamps, and storage normalization to safely load old flat data while persisting to `localStorage`; added session display and sign-out control in the protected header to surface login state (app/page.tsx).
 
-**Notes**
-- Lockfile not updated here; run `pnpm install` to refresh `pnpm-lock.yaml` after the dependency change.
-- Tests not run (not requested).
+Testing: Not run (not requested).
+
+You may want to run `pnpm dev` to sanity-check the updated UI locally.
