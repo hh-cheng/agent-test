@@ -94,7 +94,7 @@ Gemini 的输出必须包含以下区块，且每个问题都要可执行、可�
 
 #### 5.0 @codex 触发规则（必须）
 
-* 若审计结论需要修改代码（存在 Blocker/Major/Minor/Suggestion 中任意需要代码改动的项），评论正文第一行必须添加 `@codex`
+* 若审计结论需要修改代码（存在 Blocker/Major/Minor/Suggestion 中任意需要代码改动的项），评论正文第一行必须添加 `@codex`，并附带简短指令，例如：`@codex address this feedback`
 * 若无需修改代码（仅结论/说明/确认无问题），评论正文第一行不得包含 `@codex`
 
 #### 5.1 总结
