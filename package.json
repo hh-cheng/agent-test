@@ -8,7 +8,8 @@
     "start": "next start",
     "lint:check": "biome check",
     "lint": "biome format --write",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "tsc -p tsconfig.test.json && node --test \".tmp-test/tests/**/*.test.js\""
   },
   "lint-staged": {
     "**/*.{js,jsx,tsx,ts,json,jsonc,css}": [

@@ -1,5 +1,11 @@
-- Repository already matches the requested features: `app/page.tsx` implements nested parent/child TODOs with `priority`, full CRUD, completion propagation, drag-handle reordering, batch complete/delete/priority, per-parent progress bar, status filters (全部/未完成/已完成), search, and storage normalization (`nested-todos` with legacy key fallback).
-- Auth flow is wired with fixed credentials in `app/api/auth/[...nextauth]/route.ts` (next-auth credentials provider, JWT session) plus route protection in `middleware.ts` redirecting unauthenticated users to `/login`.
-- Login experience in `app/login/page.tsx` shows the fixed credentials, handles error messaging on bad input, and uses `signIn`; the main page header surfaces the signed-in user and provides `signOut` (`app/page.tsx` + `app/layout.tsx`/`providers.tsx` for session context).
+Changes:
+- Moved todo types and helpers into `lib/todo-utils.ts`, keeping storage normalization, batch operations, sorting, and the new `filterChildren` helper reused by the UI.
+- Updated `app/page.tsx` to memoize filtered child lists, clear selections only on filter changes or clearing the search box, and keep all interactions wired to the shared helpers for consistent parent/child completion and priority handling.
+- Added runnable unit-test setup (`tsconfig.test.json`, `package.json` test script, `.gitignore` for `.tmp-test/`) plus `tests/todo-utils.test.ts` covering priority batch updates (success and edge cases) and combined filter/search behavior.
 
-Tests: Not run (not requested).
+Testing:
+- Not run (`node_modules` are not installed in this workspace).
+
+Next steps:
+1) Install dependencies then run `npm test` (or `pnpm test`) to compile with `tsconfig.test.json` and execute the new node-based tests.
+2) If everything looks good, commit and push per the repo’s workflow.

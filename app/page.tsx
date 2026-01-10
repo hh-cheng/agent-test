@@ -2,133 +2,23 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-
-type Priority = "high" | "medium" | "low";
-
-type Todo = {
-  id: string;
-  title: string;
-  completed: boolean;
-  createdAt: string;
-  priority: Priority;
-  children: Todo[];
-};
+import type { ChildFilter, Priority, Todo } from "@/lib/todo-utils";
+import {
+  collectStats,
+  completeChildrenBatch,
+  deleteChildrenBatch,
+  deleteTodo,
+  filterChildren,
+  generateId,
+  normalizeTodos,
+  reconcileTree,
+  reorderWithinParent,
+  setCompletionDeep,
+  updateChildrenPriorityBatch,
+  updateTodos,
+} from "@/lib/todo-utils";
 
 const STORAGE_KEY = "nested-todos";
-
-const generateId = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const setCompletionDeep = (todo: Todo, completed: boolean): Todo => ({
-  ...todo,
-  completed,
-  children: todo.children.map((child) => setCompletionDeep(child, completed)),
-});
-
-const reconcileCompletion = (todo: Todo): Todo => {
-  if (!todo.children.length) {
-    return todo;
-  }
-
-  const allChildrenDone = todo.children.every((child) => child.completed);
-  const anyChildActive = todo.children.some((child) => !child.completed);
-
-  if (anyChildActive && todo.completed) {
-    return { ...todo, completed: false };
-  }
-
-  if (allChildrenDone && !todo.completed) {
-    return { ...todo, completed: true };
-  }
-
-  return todo;
-};
-
-const reconcileTree = (list: Todo[]): Todo[] =>
-  list.map((todo) => {
-    const nextChildren = reconcileTree(todo.children);
-    return reconcileCompletion({ ...todo, children: nextChildren });
-  });
-
-const normalizeTodos = (raw: unknown): Todo[] => {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => ({
-    id: typeof item?.id === "string" ? item.id : generateId(),
-    title: typeof item?.title === "string" ? item.title : "未命名待办",
-    completed: Boolean((item as { completed?: boolean })?.completed),
-    createdAt:
-      typeof item?.createdAt === "string"
-        ? (item.createdAt as string)
-        : new Date().toISOString(),
-    priority:
-      (["high", "medium", "low"] as const).includes(
-        (item as { priority?: Priority })?.priority ?? "medium",
-      )
-        ? ((item as { priority?: Priority })?.priority as Priority)
-        : "medium",
-    children: normalizeTodos((item as { children?: unknown })?.children ?? []),
-  }));
-};
-
-const updateTodos = (
-  list: Todo[],
-  targetId: string,
-  updater: (todo: Todo) => Todo,
-): [Todo[], boolean] => {
-  let changed = false;
-
-  const nextList = list.map((todo) => {
-    if (todo.id === targetId) {
-      changed = true;
-      const updated = updater(todo);
-      return reconcileCompletion({
-        ...updated,
-        children: updated.children ?? [],
-      });
-    }
-
-    const [childList, childChanged] = updateTodos(
-      todo.children,
-      targetId,
-      updater,
-    );
-
-    if (childChanged) {
-      changed = true;
-      return reconcileCompletion({ ...todo, children: childList });
-    }
-
-    return todo;
-  });
-
-  return [changed ? nextList : list, changed];
-};
-
-const deleteTodo = (list: Todo[], targetId: string): [Todo[], boolean] => {
-  let changed = false;
-
-  const filtered = list
-    .map((todo) => {
-      if (todo.id === targetId) {
-        changed = true;
-        return null;
-      }
-
-      const [children, childChanged] = deleteTodo(todo.children, targetId);
-      if (childChanged) changed = true;
-
-      if (children !== todo.children) {
-        return reconcileCompletion({ ...todo, children });
-      }
-
-      return todo;
-    })
-    .filter(Boolean) as Todo[];
-
-  return [changed ? filtered : list, changed];
-};
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -151,178 +41,6 @@ const priorityMeta: Record<Priority, { label: string; classes: string }> = {
     classes: "border-sky-200 bg-sky-50 text-sky-700",
   },
 };
-
-const reorderWithinParent = (
-  list: Todo[],
-  parentId: string,
-  sourceId: string,
-  targetId: string,
-): [Todo[], boolean] => {
-  let changed = false;
-
-  const next = list.map((todo) => {
-    if (todo.id === parentId) {
-      const children = [...todo.children];
-      const sourceIndex = children.findIndex((child) => child.id === sourceId);
-      const targetIndex = children.findIndex((child) => child.id === targetId);
-
-      if (
-        sourceIndex !== -1 &&
-        targetIndex !== -1 &&
-        sourceIndex !== targetIndex
-      ) {
-        const [moved] = children.splice(sourceIndex, 1);
-        const adjustedTarget =
-          sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-        children.splice(adjustedTarget, 0, moved);
-        changed = true;
-        return reconcileCompletion({ ...todo, children });
-      }
-
-      return todo;
-    }
-
-    const [childList, childChanged] = reorderWithinParent(
-      todo.children,
-      parentId,
-      sourceId,
-      targetId,
-    );
-
-    if (childChanged) {
-      changed = true;
-      return reconcileCompletion({ ...todo, children: childList });
-    }
-
-    return todo;
-  });
-
-  return [changed ? next : list, changed];
-};
-
-const completeChildrenBatch = (
-  list: Todo[],
-  parentId: string,
-  childIds: Set<string>,
-): [Todo[], boolean] => {
-  let changed = false;
-
-  const next = list.map((todo) => {
-    if (todo.id === parentId) {
-      const children = todo.children.map((child) => {
-        if (!childIds.has(child.id)) return child;
-        changed = true;
-        return setCompletionDeep({ ...child, completed: true }, true);
-      });
-
-      return reconcileCompletion({ ...todo, children });
-    }
-
-    const [childList, childChanged] = completeChildrenBatch(
-      todo.children,
-      parentId,
-      childIds,
-    );
-
-    if (childChanged) {
-      changed = true;
-      return reconcileCompletion({ ...todo, children: childList });
-    }
-
-    return todo;
-  });
-
-  return [changed ? next : list, changed];
-};
-
-const deleteChildrenBatch = (
-  list: Todo[],
-  parentId: string,
-  childIds: Set<string>,
-): [Todo[], boolean] => {
-  let changed = false;
-
-  const next = list
-    .map((todo) => {
-      if (todo.id === parentId) {
-        const children = todo.children.filter((child) => {
-          const keep = !childIds.has(child.id);
-          if (!keep) changed = true;
-          return keep;
-        });
-        return reconcileCompletion({ ...todo, children });
-      }
-
-      const [childList, childChanged] = deleteChildrenBatch(
-        todo.children,
-        parentId,
-        childIds,
-      );
-
-      if (childChanged) {
-        changed = true;
-        return reconcileCompletion({ ...todo, children: childList });
-      }
-
-      return todo;
-    })
-    .filter(Boolean) as Todo[];
-
-  return [changed ? next : list, changed];
-};
-
-const updateChildrenPriorityBatch = (
-  list: Todo[],
-  parentId: string,
-  childIds: Set<string>,
-  priority: Priority,
-): [Todo[], boolean] => {
-  let changed = false;
-
-  const next = list.map((todo) => {
-    if (todo.id === parentId) {
-      const children = todo.children.map((child) => {
-        if (!childIds.has(child.id)) return child;
-        changed = true;
-        return { ...child, priority };
-      });
-      return reconcileCompletion({ ...todo, children });
-    }
-
-    const [childList, childChanged] = updateChildrenPriorityBatch(
-      todo.children,
-      parentId,
-      childIds,
-      priority,
-    );
-
-    if (childChanged) {
-      changed = true;
-      return reconcileCompletion({ ...todo, children: childList });
-    }
-
-    return todo;
-  });
-
-  return [changed ? next : list, changed];
-};
-
-const collectStats = (
-  list: Todo[],
-): {
-  total: number;
-  completed: number;
-} =>
-  list.reduce(
-    (acc, todo) => {
-      const child = collectStats(todo.children);
-      return {
-        total: acc.total + 1 + child.total,
-        completed: acc.completed + (todo.completed ? 1 : 0) + child.completed,
-      };
-    },
-    { total: 0, completed: 0 },
-  );
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -650,9 +368,7 @@ function TodoItem({
   const [childTitle, setChildTitle] = useState("");
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [draggingChildId, setDraggingChildId] = useState<string | null>(null);
-  const [childFilter, setChildFilter] = useState<"all" | "active" | "completed">(
-    "all",
-  );
+  const [childFilter, setChildFilter] = useState<ChildFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
@@ -664,10 +380,6 @@ function TodoItem({
       current.filter((id) => todo.children.some((child) => child.id === id)),
     );
   }, [todo.children]);
-
-  useEffect(() => {
-    setSelectedChildIds([]);
-  }, [childFilter, searchTerm]);
 
   const saveEdit = () => {
     const title = draft.trim();
@@ -696,6 +408,20 @@ function TodoItem({
   };
 
   const clearSelection = () => setSelectedChildIds([]);
+
+  const handleFilterChange = (value: ChildFilter) => {
+    setChildFilter(value);
+    clearSelection();
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm((previous) => {
+      if (previous.trim() && !value.trim()) {
+        clearSelection();
+      }
+      return value;
+    });
+  };
 
   const handleBatchCompleteClick = () => {
     if (!selectedChildIds.length) return;
@@ -733,18 +459,15 @@ function TodoItem({
     setDraggingChildId(null);
   };
 
-  const completedChildren = todo.children.filter((child) => child.completed).length;
+  const completedChildren = useMemo(
+    () => todo.children.filter((child) => child.completed).length,
+    [todo.children],
+  );
   const totalChildren = todo.children.length;
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const visibleChildren = todo.children.filter((child) => {
-    const matchesFilter =
-      childFilter === "all" ||
-      (childFilter === "active" && !child.completed) ||
-      (childFilter === "completed" && child.completed);
-    const matchesSearch =
-      !normalizedSearch || child.title.toLowerCase().includes(normalizedSearch);
-    return matchesFilter && matchesSearch;
-  });
+  const visibleChildren = useMemo(
+    () => filterChildren(todo.children, childFilter, searchTerm),
+    [todo.children, childFilter, searchTerm],
+  );
   const visibleChildrenCount = visibleChildren.length;
   const progressPercent =
     totalChildren === 0
@@ -901,16 +624,14 @@ function TodoItem({
                 子 TODO 过滤
               </span>
               {[
-                { value: "all", label: "全部" },
-                { value: "active", label: "仅未完成" },
-                { value: "completed", label: "仅已完成" },
+                { value: "all" as ChildFilter, label: "全部" },
+                { value: "active" as ChildFilter, label: "仅未完成" },
+                { value: "completed" as ChildFilter, label: "仅已完成" },
               ].map((item) => (
                 <button
                   key={item.value}
                   type="button"
-                  onClick={() =>
-                    setChildFilter(item.value as "all" | "active" | "completed")
-                  }
+                  onClick={() => handleFilterChange(item.value)}
                   className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
                     childFilter === item.value
                       ? "border border-emerald-200 bg-white text-emerald-700 shadow-sm"
@@ -922,7 +643,7 @@ function TodoItem({
               ))}
               <input
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 placeholder="搜索子 TODO 标题"
                 className="w-full max-w-xs rounded-md border border-slate-200 px-3 py-1 text-xs outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
               />
