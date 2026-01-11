@@ -58,4 +58,4 @@
 
 
 # Trigger
-Auto-run on push to codex/new-tasks
+Auto-run on push to main
