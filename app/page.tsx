@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { signOut, useSession } from "next-auth/react";
 import type {
   ChildFilter,
@@ -19,11 +25,13 @@ import {
   reconcileTree,
   reorderWithinParent,
   setCompletionDeep,
+  buildCsvFromTodos,
   updateChildrenPriorityBatch,
   updateTodos,
 } from "@/lib/todo-utils";
 
 const STORAGE_KEY = "nested-todos";
+const HISTORY_LIMIT = 20;
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -51,6 +59,33 @@ export default function HomePage() {
   const { data: session, status } = useSession();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const [history, setHistory] = useState<Todo[][]>([]);
+  const newTitleRef = useRef<HTMLInputElement>(null);
+
+  const recordHistory = useCallback((snapshot: Todo[]) => {
+    setHistory((prev) => [snapshot, ...prev].slice(0, HISTORY_LIMIT));
+  }, []);
+
+  const applyChange = useCallback(
+    (updater: (current: Todo[]) => [Todo[], boolean]) => {
+      setTodos((current) => {
+        const [next, changed] = updater(current);
+        if (!changed) return current;
+        recordHistory(current);
+        return reconcileTree(next);
+      });
+    },
+    [recordHistory],
+  );
+
+  const handleUndo = useCallback(() => {
+    setHistory((prev) => {
+      if (!prev.length) return prev;
+      const [previous, ...rest] = prev;
+      setTodos(previous);
+      return rest;
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -72,148 +107,187 @@ export default function HomePage() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey;
+      const target = event.target as HTMLElement | null;
+      const isFormElement =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
+      if (isMod && event.shiftKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        newTitleRef.current?.focus();
+      }
+
+      if (isMod && event.key.toLowerCase() === "z" && !event.shiftKey) {
+        if (isFormElement) return;
+        event.preventDefault();
+        handleUndo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleUndo]);
+
   const { completed: completedCount, total: totalCount } = useMemo(
     () => collectStats(todos),
     [todos],
   );
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     const title = newTitle.trim();
     if (!title) return;
-    const next = [
-      ...todos,
-      {
-        id: generateId(),
-        title,
-        completed: false,
-        createdAt: new Date().toISOString(),
-        priority: "medium",
-        children: [],
-      },
-    ];
-    setTodos(reconcileTree(next));
+    applyChange((current) => [
+      [
+        ...current,
+        {
+          id: generateId(),
+          title,
+          completed: false,
+          createdAt: new Date().toISOString(),
+          priority: "medium",
+          children: [],
+        },
+      ],
+      true,
+    ]);
     setNewTitle("");
-  };
+    newTitleRef.current?.focus();
+  }, [applyChange, newTitle]);
 
-  const handleToggle = (id: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => {
-        const completed = !todo.completed;
-        return {
+  const handleToggle = useCallback(
+    (id: string) => {
+      applyChange((current) =>
+        updateTodos(current, id, (todo) => {
+          const completed = !todo.completed;
+          return {
+            ...todo,
+            completed,
+            children: todo.children.map((child) =>
+              setCompletionDeep(child, completed),
+            ),
+          };
+        }),
+      );
+    },
+    [applyChange],
+  );
+
+  const handleEdit = useCallback(
+    (id: string, title: string) => {
+      applyChange((current) =>
+        updateTodos(current, id, (todo) => ({
           ...todo,
-          completed,
-          children: todo.children.map((child) =>
-            setCompletionDeep(child, completed),
-          ),
-        };
-      });
-      return changed ? next : current;
-    });
-  };
-
-  const handleEdit = (id: string, title: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => ({
-        ...todo,
-        title,
-      }));
-      return changed ? next : current;
-    });
-  };
-
-  const handleDelete = (id: string) => {
-    setTodos((current) => {
-      const [next, changed] = deleteTodo(current, id);
-      return changed ? reconcileTree(next) : current;
-    });
-  };
-
-  const handleAddChild = (parentId: string, title: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, parentId, (todo) => ({
-        ...todo,
-        children: [
-          ...todo.children,
-          {
-            id: generateId(),
-            title,
-            completed: todo.completed,
-            createdAt: new Date().toISOString(),
-            priority: "medium",
-            children: [],
-          },
-        ],
-      }));
-      return changed ? reconcileTree(next) : current;
-    });
-  };
-
-  const handleReorderChildren = (
-    parentId: string,
-    sourceId: string,
-    targetId: string,
-  ) => {
-    setTodos((current) => {
-      const [next, changed] = reorderWithinParent(
-        current,
-        parentId,
-        sourceId,
-        targetId,
+          title,
+        })),
       );
-      return changed ? next : current;
-    });
-  };
+    },
+    [applyChange],
+  );
 
-  const handleBatchComplete = (parentId: string, childIds: string[]) => {
-    const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = completeChildrenBatch(
-        current,
-        parentId,
-        targetIds,
+  const handleDelete = useCallback(
+    (id: string) => {
+      applyChange((current) => deleteTodo(current, id));
+    },
+    [applyChange],
+  );
+
+  const handleAddChild = useCallback(
+    (parentId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      applyChange((current) =>
+        updateTodos(current, parentId, (todo) => ({
+          ...todo,
+          children: [
+            ...todo.children,
+            {
+              id: generateId(),
+              title: trimmed,
+              completed: todo.completed,
+              createdAt: new Date().toISOString(),
+              priority: "medium",
+              children: [],
+            },
+          ],
+        })),
       );
-      return changed ? reconcileTree(next) : current;
-    });
-  };
+    },
+    [applyChange],
+  );
 
-  const handleBatchDelete = (parentId: string, childIds: string[]) => {
-    const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = deleteChildrenBatch(
-        current,
-        parentId,
-        targetIds,
+  const handleReorderChildren = useCallback(
+    (parentId: string, sourceId: string, targetId: string) => {
+      applyChange((current) =>
+        reorderWithinParent(current, parentId, sourceId, targetId),
       );
-      return changed ? reconcileTree(next) : current;
-    });
-  };
+    },
+    [applyChange],
+  );
 
-  const handleUpdatePriority = (id: string, priority: Priority) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => ({
-        ...todo,
-        priority,
-      }));
-      return changed ? next : current;
-    });
-  };
-
-  const handleBatchPriority = (
-    parentId: string,
-    childIds: string[],
-    priority: Priority,
-  ) => {
-    const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = updateChildrenPriorityBatch(
-        current,
-        parentId,
-        targetIds,
-        priority,
+  const handleBatchComplete = useCallback(
+    (parentId: string, childIds: string[]) => {
+      const targetIds = new Set(childIds);
+      applyChange((current) =>
+        completeChildrenBatch(current, parentId, targetIds),
       );
-      return changed ? reconcileTree(next) : current;
-    });
-  };
+    },
+    [applyChange],
+  );
+
+  const handleBatchDelete = useCallback(
+    (parentId: string, childIds: string[]) => {
+      const targetIds = new Set(childIds);
+      applyChange((current) =>
+        deleteChildrenBatch(current, parentId, targetIds),
+      );
+    },
+    [applyChange],
+  );
+
+  const handleUpdatePriority = useCallback(
+    (id: string, priority: Priority) => {
+      applyChange((current) =>
+        updateTodos(current, id, (todo) => ({
+          ...todo,
+          priority,
+        })),
+      );
+    },
+    [applyChange],
+  );
+
+  const handleBatchPriority = useCallback(
+    (parentId: string, childIds: string[], priority: Priority) => {
+      const targetIds = new Set(childIds);
+      applyChange((current) =>
+        updateChildrenPriorityBatch(current, parentId, targetIds, priority),
+      );
+    },
+    [applyChange],
+  );
+
+  const handleExportCsv = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const csv = buildCsvFromTodos(todos);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `todos-${new Date()
+      .toISOString()
+      .replace(/[:T]/g, "-")
+      .split(".")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [todos]);
+
+  const canUndo = history.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-slate-50 px-6 py-10 text-slate-900">
@@ -279,6 +353,37 @@ export default function HomePage() {
           </div>
         </section>
 
+        <section className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              导出 CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              撤销最近操作
+            </button>
+            <span className="text-[11px] text-slate-500">
+              {canUndo ? `可撤销 ${history.length} 步` : "暂无可撤销操作"}
+            </span>
+          </div>
+          <div className="space-y-1 text-[11px] text-slate-600">
+            <p>
+              快捷键：Ctrl/⌘+Shift+N 聚焦新建父 TODO，Ctrl/⌘+Z 撤销最近更改。
+            </p>
+            <p>
+              在父 TODO 卡片内：Ctrl/⌘+Enter 新增子项，Ctrl/⌘+Shift+C 批量完成选中子项。
+            </p>
+          </div>
+        </section>
+
         <section className="rounded-xl border border-slate-100 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex-1">
@@ -287,6 +392,7 @@ export default function HomePage() {
               </label>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
+                  ref={newTitleRef}
                   value={newTitle}
                   onChange={(event) => setNewTitle(event.target.value)}
                   placeholder="输入要完成的事项"
@@ -376,6 +482,7 @@ function TodoItem({
   const [childFilter, setChildFilter] = useState<ChildFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDraft(todo.title);
@@ -452,6 +559,31 @@ function TodoItem({
     clearSelection();
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const withinCard = containerRef.current?.contains(target);
+      if (!withinCard) return;
+
+      const isMod = event.metaKey || event.ctrlKey;
+      if (isMod && event.key === "Enter") {
+        event.preventDefault();
+        addChild();
+      } else if (
+        isMod &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "c"
+      ) {
+        event.preventDefault();
+        handleBatchCompleteClick();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [addChild, handleBatchCompleteClick]);
+
   const handleDragStart = (
     event: React.DragEvent<HTMLButtonElement | HTMLDivElement>,
     childId: string,
@@ -488,6 +620,7 @@ function TodoItem({
 
   return (
     <div
+      ref={containerRef}
       className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       style={{ marginLeft: depth * 16 }}
     >
@@ -753,6 +886,9 @@ function TodoItem({
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
               使用左侧把手拖拽调整同级子 TODO 顺序。
+            </p>
+            <p className="text-[11px] text-slate-500">
+              快捷键：Ctrl/⌘+Enter 新增当前父级子 TODO，Ctrl/⌘+Shift+C 批量完成选中子项，Ctrl/⌘+Z 支持全局撤销。
             </p>
           </div>
         ) : null}
