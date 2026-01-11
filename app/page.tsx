@@ -483,6 +483,8 @@ function TodoItem({
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const childTitleRef = useRef(childTitle);
+  const selectedChildIdsRef = useRef(selectedChildIds);
 
   useEffect(() => {
     setDraft(todo.title);
@@ -494,6 +496,14 @@ function TodoItem({
     );
   }, [todo.children]);
 
+  useEffect(() => {
+    childTitleRef.current = childTitle;
+  }, [childTitle]);
+
+  useEffect(() => {
+    selectedChildIdsRef.current = selectedChildIds;
+  }, [selectedChildIds]);
+
   const saveEdit = () => {
     const title = draft.trim();
     if (!title) return;
@@ -501,12 +511,12 @@ function TodoItem({
     setEditing(false);
   };
 
-  const addChild = () => {
-    const title = childTitle.trim();
+  const addChild = useCallback(() => {
+    const title = childTitleRef.current.trim();
     if (!title) return;
     onAddChild(todo.id, title);
     setChildTitle("");
-  };
+  }, [onAddChild, todo.id]);
 
   const toggleSelection = (childId: string) => {
     setSelectedChildIds((current) =>
@@ -520,7 +530,7 @@ function TodoItem({
     setSelectedChildIds(visibleChildren.map((child) => child.id));
   };
 
-  const clearSelection = () => setSelectedChildIds([]);
+  const clearSelection = useCallback(() => setSelectedChildIds([]), []);
 
   const handleFilterChange = (value: ChildFilter) => {
     setChildFilter(value);
@@ -541,11 +551,12 @@ function TodoItem({
     });
   };
 
-  const handleBatchCompleteClick = () => {
-    if (!selectedChildIds.length) return;
-    onBatchComplete(todo.id, selectedChildIds);
+  const handleBatchCompleteClick = useCallback(() => {
+    const ids = selectedChildIdsRef.current;
+    if (!ids.length) return;
+    onBatchComplete(todo.id, ids);
     clearSelection();
-  };
+  }, [clearSelection, onBatchComplete, todo.id]);
 
   const handleBatchDeleteClick = () => {
     if (!selectedChildIds.length) return;
