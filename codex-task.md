@@ -142,3 +142,5 @@
 >      * [ ]  切换过滤器或输入搜索词后，验证之前的勾选状态是否被正确清空。
 
 @codex address this feedback
+# Trigger
+Auto-run on push to main
