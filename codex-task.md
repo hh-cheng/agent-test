@@ -66,3 +66,4 @@
 
 # Trigger
 Auto-run on push to codex/new-tasks2
+Auto-run on push to main
