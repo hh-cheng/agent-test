@@ -31,6 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# codex artifacts
+codex-task.md
+codex-output.md
+
 # env files (can opt-in for committing if needed)
 .env*
 

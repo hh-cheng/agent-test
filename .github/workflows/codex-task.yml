@@ -42,6 +42,15 @@ jobs:
           sandbox: workspace-write
           output-file: codex-output.md
 
+      - name: Upload Codex artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-artifacts
+          path: |
+            codex-task.md
+            codex-output.md
+
       - name: Commit and push changes
         run: |
           if [ -z "$(git status --porcelain)" ]; then
@@ -116,6 +125,15 @@ jobs:
           safety-strategy: drop-sudo
           sandbox: workspace-write
           output-file: codex-output.md
+
+      - name: Upload Codex artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-artifacts
+          path: |
+            codex-task.md
+            codex-output.md
 
       - name: Commit and push changes
         run: |
