@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Todo } from "../lib/todo-utils";
 import {
+  buildCsvFromTodos,
   filterChildren,
+  flattenTodosForExport,
   updateChildrenPriorityBatch,
 } from "../lib/todo-utils";
 
@@ -140,4 +142,137 @@ test("filterChildren applies priority filter together with other criteria", () =
     "high",
   );
   assert.deepEqual(searchNarrows.map((child) => child.id), ["c"]);
+});
+
+test("flattenTodosForExport returns empty rows for empty list", () => {
+  const rows = flattenTodosForExport([]);
+  assert.deepEqual(rows, []);
+});
+
+test("flattenTodosForExport captures top-level todos", () => {
+  const list: Todo[] = [
+    {
+      id: "p1",
+      title: "Parent only",
+      completed: false,
+      createdAt: baseDate,
+      priority: "medium",
+      children: [],
+    },
+  ];
+
+  const rows = flattenTodosForExport(list);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], {
+    id: "p1",
+    title: "Parent only",
+    parentId: null,
+    parentTitle: null,
+    completed: false,
+    priority: "medium",
+    createdAt: baseDate,
+    depth: 0,
+    path: "Parent only",
+  });
+});
+
+test("flattenTodosForExport keeps parent chain for nested todos", () => {
+  const list: Todo[] = [
+    {
+      id: "p1",
+      title: "Top",
+      completed: false,
+      createdAt: baseDate,
+      priority: "high",
+      children: [
+        {
+          id: "c1",
+          title: 'Child,One "quoted"',
+          completed: true,
+          createdAt: baseDate,
+          priority: "low",
+          children: [
+            {
+              id: "g1",
+              title: "Grandchild",
+              completed: false,
+              createdAt: baseDate,
+              priority: "medium",
+              children: [],
+            },
+          ],
+        },
+        {
+          id: "c2",
+          title: "Second child",
+          completed: false,
+          createdAt: baseDate,
+          priority: "medium",
+          children: [],
+        },
+      ],
+    },
+  ];
+
+  const rows = flattenTodosForExport(list);
+  assert.equal(rows.length, 4);
+
+  const childRow = rows.find((row) => row.id === "c1");
+  assert(childRow, "child row should exist");
+  assert.equal(childRow?.parentId, "p1");
+  assert.equal(childRow?.path, 'Top > Child,One "quoted"');
+  assert.equal(childRow?.depth, 1);
+
+  const grandChildRow = rows.find((row) => row.id === "g1");
+  assert(grandChildRow, "grandchild row should exist");
+  assert.equal(grandChildRow?.parentId, "c1");
+  assert.equal(grandChildRow?.parentTitle, 'Child,One "quoted"');
+  assert.equal(grandChildRow?.path, 'Top > Child,One "quoted" > Grandchild');
+  assert.equal(grandChildRow?.depth, 2);
+});
+
+test("buildCsvFromTodos escapes commas and quotes and includes hierarchy", () => {
+  const list: Todo[] = [
+    {
+      id: "p1",
+      title: "Root",
+      completed: false,
+      createdAt: baseDate,
+      priority: "high",
+      children: [
+        {
+          id: "c1",
+          title: 'Child,One "quoted"',
+          completed: true,
+          createdAt: baseDate,
+          priority: "low",
+          children: [],
+        },
+      ],
+    },
+  ];
+
+  const csv = buildCsvFromTodos(list);
+  const lines = csv.split("\n");
+
+  assert.equal(
+    lines[0],
+    "level,path,parentId,parentTitle,id,title,priority,completed,createdAt",
+  );
+  assert.equal(lines.length, 3);
+
+  const childLine = lines.find((line) => line.includes("c1"));
+  assert(childLine, "child csv row should exist");
+  assert(
+    childLine?.includes('"Root > Child,One ""quoted"""'),
+    "path should be quoted and escaped",
+  );
+  assert(
+    childLine?.includes('"Child,One ""quoted"""'),
+    "title should escape embedded quotes and comma",
+  );
+  assert(
+    childLine?.includes("true"),
+    "completed flag should be included in csv row",
+  );
 });

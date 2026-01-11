@@ -317,3 +317,73 @@ export const filterChildren = (
     return matchesFilter && matchesPriority && matchesSearch;
   });
 };
+
+export type FlatTodoRow = {
+  id: string;
+  title: string;
+  parentId: string | null;
+  parentTitle: string | null;
+  completed: boolean;
+  priority: Priority;
+  createdAt: string;
+  depth: number;
+  path: string;
+};
+
+export const flattenTodosForExport = (
+  list: Todo[],
+  parentId: string | null = null,
+  parentTitle: string | null = null,
+  depth = 0,
+  lineage: string[] = [],
+): FlatTodoRow[] =>
+  list.flatMap((todo) => {
+    const currentPath = [...lineage, todo.title].join(" > ");
+    const row: FlatTodoRow = {
+      id: todo.id,
+      title: todo.title,
+      parentId,
+      parentTitle,
+      completed: todo.completed,
+      priority: todo.priority,
+      createdAt: todo.createdAt,
+      depth,
+      path: currentPath,
+    };
+
+    return [
+      row,
+      ...flattenTodosForExport(
+        todo.children,
+        todo.id,
+        todo.title,
+        depth + 1,
+        [...lineage, todo.title],
+      ),
+    ];
+  });
+
+const escapeCsvValue = (value: string) =>
+  `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+export const buildCsvFromTodos = (list: Todo[]): string => {
+  const rows = flattenTodosForExport(list);
+  const header =
+    "level,path,parentId,parentTitle,id,title,priority,completed,createdAt";
+
+  const lines = rows.map((row) =>
+    [
+      row.depth,
+      escapeCsvValue(row.path),
+      escapeCsvValue(row.parentId ?? ""),
+      escapeCsvValue(row.parentTitle ?? ""),
+      escapeCsvValue(row.id),
+      escapeCsvValue(row.title),
+      escapeCsvValue(row.priority),
+      row.completed ? "true" : "false",
+      escapeCsvValue(row.createdAt),
+    ].join(","),
+  );
+
+  return [header, ...lines].join("\n");
+};
