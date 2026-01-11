@@ -1,13 +1,16 @@
 name: Codex Auto PR
 
 on:
-  push:
-    branches:
-      - "codex/*"
-      - "codex/**"
+  workflow_run:
+    workflows: ["Codex Task Runner"]
+    types: [completed]
 
 jobs:
   create_pr:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'codex/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,7 +22,12 @@ jobs:
           github-token: ${{ secrets.PR_CREATOR_TOKEN }}
           script: |
             const base = context.payload.repository.default_branch;
-            const head = context.ref.replace("refs/heads/", "");
+            const head = context.payload.workflow_run.head_branch;
+
+            if (!head) {
+              core.info("No head branch found for workflow_run event.");
+              return;
+            }
             const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,

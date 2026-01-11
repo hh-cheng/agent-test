@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".tmp-test",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2019",
+    "jsx": "react-jsx"
+  },
+  "include": ["tests/**/*.ts", "lib/**/*.ts"]
+}
