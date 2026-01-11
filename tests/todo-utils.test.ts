@@ -116,3 +116,28 @@ test("filterChildren combines filter and search terms", () => {
     ["b"],
   );
 });
+
+test("filterChildren applies priority filter together with other criteria", () => {
+  const children: Todo[] = [
+    createChild("a", { title: "Write docs", priority: "high" }),
+    createChild("b", { title: "Ship code", completed: true, priority: "low" }),
+    createChild("c", { title: "Write tests", priority: "high" }),
+  ];
+
+  const highPriorityActive = filterChildren(children, "active", "", "high");
+  assert.deepEqual(
+    highPriorityActive.map((child) => child.id),
+    ["a", "c"],
+  );
+
+  const completedLow = filterChildren(children, "completed", "", "low");
+  assert.deepEqual(completedLow.map((child) => child.id), ["b"]);
+
+  const searchNarrows = filterChildren(
+    children,
+    "all",
+    "tests",
+    "high",
+  );
+  assert.deepEqual(searchNarrows.map((child) => child.id), ["c"]);
+});

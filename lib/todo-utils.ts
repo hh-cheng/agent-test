@@ -1,6 +1,7 @@
 export type Priority = "high" | "medium" | "low";
 
 export type ChildFilter = "all" | "active" | "completed";
+export type PriorityFilter = "all" | Priority;
 
 export type Todo = {
   id: string;
@@ -301,6 +302,7 @@ export const filterChildren = (
   children: Todo[],
   childFilter: ChildFilter,
   searchTerm: string,
+  priorityFilter: PriorityFilter = "all",
 ): Todo[] => {
   const normalizedSearch = searchTerm.trim().toLowerCase();
   return children.filter((child) => {
@@ -308,8 +310,10 @@ export const filterChildren = (
       childFilter === "all" ||
       (childFilter === "active" && !child.completed) ||
       (childFilter === "completed" && child.completed);
+    const matchesPriority =
+      priorityFilter === "all" || child.priority === priorityFilter;
     const matchesSearch =
       !normalizedSearch || child.title.toLowerCase().includes(normalizedSearch);
-    return matchesFilter && matchesSearch;
+    return matchesFilter && matchesPriority && matchesSearch;
   });
 };

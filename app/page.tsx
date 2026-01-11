@@ -2,7 +2,12 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-import type { ChildFilter, Priority, Todo } from "@/lib/todo-utils";
+import type {
+  ChildFilter,
+  Priority,
+  PriorityFilter,
+  Todo,
+} from "@/lib/todo-utils";
 import {
   collectStats,
   completeChildrenBatch,
@@ -369,6 +374,7 @@ function TodoItem({
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [draggingChildId, setDraggingChildId] = useState<string | null>(null);
   const [childFilter, setChildFilter] = useState<ChildFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
@@ -411,6 +417,11 @@ function TodoItem({
 
   const handleFilterChange = (value: ChildFilter) => {
     setChildFilter(value);
+    clearSelection();
+  };
+
+  const handlePriorityFilterChange = (value: PriorityFilter) => {
+    setPriorityFilter(value);
     clearSelection();
   };
 
@@ -465,8 +476,9 @@ function TodoItem({
   );
   const totalChildren = todo.children.length;
   const visibleChildren = useMemo(
-    () => filterChildren(todo.children, childFilter, searchTerm),
-    [todo.children, childFilter, searchTerm],
+    () =>
+      filterChildren(todo.children, childFilter, searchTerm, priorityFilter),
+    [todo.children, childFilter, searchTerm, priorityFilter],
   );
   const visibleChildrenCount = visibleChildren.length;
   const progressPercent =
@@ -634,6 +646,30 @@ function TodoItem({
                   onClick={() => handleFilterChange(item.value)}
                   className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
                     childFilter === item.value
+                      ? "border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+                      : "border border-slate-200 text-slate-700 hover:bg-white"
+                  }`}
+                >
+                    {item.label}
+                  </button>
+                ))}
+              <span className="ml-2 text-xs font-semibold text-slate-700">
+                优先级
+              </span>
+              {(
+                [
+                  { value: "all" as PriorityFilter, label: "全部" },
+                  { value: "high" as PriorityFilter, label: "高" },
+                  { value: "medium" as PriorityFilter, label: "中" },
+                  { value: "low" as PriorityFilter, label: "低" },
+                ] satisfies { value: PriorityFilter; label: string }[]
+              ).map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => handlePriorityFilterChange(item.value)}
+                  className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                    priorityFilter === item.value
                       ? "border border-emerald-200 bg-white text-emerald-700 shadow-sm"
                       : "border border-slate-200 text-slate-700 hover:bg-white"
                   }`}
