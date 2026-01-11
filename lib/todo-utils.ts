@@ -2,6 +2,17 @@ export type Priority = "high" | "medium" | "low";
 
 export type ChildFilter = "all" | "active" | "completed";
 export type PriorityFilter = "all" | Priority;
+export type FlattenedTodo = {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt: string;
+  priority: Priority;
+  parentId: string | null;
+  parentTitle: string | null;
+  level: number;
+  path: string;
+};
 
 export type Todo = {
   id: string;
@@ -317,3 +328,27 @@ export const filterChildren = (
     return matchesFilter && matchesPriority && matchesSearch;
   });
 };
+
+export const flattenTodos = (
+  list: Todo[],
+  parent: { id: string; title: string } | null = null,
+  prefix: string[] = [],
+): FlattenedTodo[] =>
+  list.flatMap((todo) => {
+    const nextPrefix = [...prefix, todo.title];
+    const current: FlattenedTodo = {
+      id: todo.id,
+      title: todo.title,
+      completed: todo.completed,
+      createdAt: todo.createdAt,
+      priority: todo.priority,
+      parentId: parent?.id ?? null,
+      parentTitle: parent?.title ?? null,
+      level: prefix.length,
+      path: nextPrefix.join(" / "),
+    };
+    return [
+      current,
+      ...flattenTodos(todo.children, { id: todo.id, title: todo.title }, nextPrefix),
+    ];
+  });

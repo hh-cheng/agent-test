@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import type {
   ChildFilter,
+  FlattenedTodo,
   Priority,
   PriorityFilter,
   Todo,
@@ -14,6 +16,7 @@ import {
   deleteChildrenBatch,
   deleteTodo,
   filterChildren,
+  flattenTodos,
   generateId,
   normalizeTodos,
   reconcileTree,
@@ -24,6 +27,7 @@ import {
 } from "@/lib/todo-utils";
 
 const STORAGE_KEY = "nested-todos";
+const MAX_HISTORY = 25;
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -48,9 +52,18 @@ const priorityMeta: Record<Priority, { label: string; classes: string }> = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const { data: session, status } = useSession();
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [history, setHistory] = useState<Todo[][]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const newTodoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/login");
+    }
+  }, [status, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -72,6 +85,118 @@ export default function HomePage() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos]);
 
+  const pushHistory = useCallback((snapshot: Todo[]) => {
+    setHistory((previous) => [
+      ...previous.slice(-(MAX_HISTORY - 1)),
+      snapshot,
+    ]);
+  }, []);
+
+  const applyChange = useCallback(
+    (getNext: (current: Todo[]) => [Todo[], boolean]) => {
+      setTodos((current) => {
+        const [next, changed] = getNext(current);
+        if (!changed) return current;
+        pushHistory(current);
+        return reconcileTree(next);
+      });
+    },
+    [pushHistory],
+  );
+
+  const handleUndo = useCallback(() => {
+    setHistory((previous) => {
+      if (!previous.length) return previous;
+      const last = previous[previous.length - 1];
+      setTodos(last);
+      return previous.slice(0, -1);
+    });
+  }, []);
+
+  const hasUndo = history.length > 0;
+
+  const toCsvValue = useCallback(
+    (value: string | number | boolean | null | undefined) => {
+      const str = String(value ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    },
+    [],
+  );
+
+  const handleExport = useCallback(() => {
+    const rows: FlattenedTodo[] = flattenTodos(todos);
+    const header = [
+      "层级路径",
+      "层级",
+      "类型",
+      "ID",
+      "父级ID",
+      "父级标题",
+      "标题",
+      "优先级",
+      "完成状态",
+      "创建时间",
+    ];
+    const content = [
+      header,
+      ...rows.map((row) => [
+        row.path,
+        row.level,
+        row.level === 0 ? "父 TODO" : "子 TODO",
+        row.id,
+        row.parentId ?? "",
+        row.parentTitle ?? "",
+        row.title,
+        row.priority,
+        row.completed ? "已完成" : "未完成",
+        formatDate(row.createdAt) || row.createdAt,
+      ]),
+    ]
+      .map((line) => line.map(toCsvValue).join(","))
+      .join("\n");
+
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `nested-todos-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [todos, toCsvValue]);
+
+  useEffect(() => {
+    const handleGlobalShortcut = (event: KeyboardEvent) => {
+      const isMeta = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      const isFormField =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
+      if (isMeta && !event.shiftKey && key === "z") {
+        if (isFormField) return;
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (isMeta && event.shiftKey && key === "n") {
+        event.preventDefault();
+        newTodoInputRef.current?.focus();
+        return;
+      }
+
+      if (isMeta && event.shiftKey && key === "e") {
+        event.preventDefault();
+        handleExport();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut);
+  }, [handleExport, handleUndo]);
+
   const { completed: completedCount, total: totalCount } = useMemo(
     () => collectStats(todos),
     [todos],
@@ -80,24 +205,26 @@ export default function HomePage() {
   const handleAdd = () => {
     const title = newTitle.trim();
     if (!title) return;
-    const next = [
-      ...todos,
-      {
-        id: generateId(),
-        title,
-        completed: false,
-        createdAt: new Date().toISOString(),
-        priority: "medium",
-        children: [],
-      },
-    ];
-    setTodos(reconcileTree(next));
+    applyChange((current) => [
+      [
+        ...current,
+        {
+          id: generateId(),
+          title,
+          completed: false,
+          createdAt: new Date().toISOString(),
+          priority: "medium",
+          children: [],
+        },
+      ],
+      true,
+    ]);
     setNewTitle("");
   };
 
   const handleToggle = (id: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => {
+    applyChange((current) =>
+      updateTodos(current, id, (todo) => {
         const completed = !todo.completed;
         return {
           ...todo,
@@ -106,31 +233,26 @@ export default function HomePage() {
             setCompletionDeep(child, completed),
           ),
         };
-      });
-      return changed ? next : current;
-    });
+      }),
+    );
   };
 
   const handleEdit = (id: string, title: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => ({
+    applyChange((current) =>
+      updateTodos(current, id, (todo) => ({
         ...todo,
         title,
-      }));
-      return changed ? next : current;
-    });
+      })),
+    );
   };
 
   const handleDelete = (id: string) => {
-    setTodos((current) => {
-      const [next, changed] = deleteTodo(current, id);
-      return changed ? reconcileTree(next) : current;
-    });
+    applyChange((current) => deleteTodo(current, id));
   };
 
   const handleAddChild = (parentId: string, title: string) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, parentId, (todo) => ({
+    applyChange((current) =>
+      updateTodos(current, parentId, (todo) => ({
         ...todo,
         children: [
           ...todo.children,
@@ -143,9 +265,8 @@ export default function HomePage() {
             children: [],
           },
         ],
-      }));
-      return changed ? reconcileTree(next) : current;
-    });
+      })),
+    );
   };
 
   const handleReorderChildren = (
@@ -153,49 +274,32 @@ export default function HomePage() {
     sourceId: string,
     targetId: string,
   ) => {
-    setTodos((current) => {
-      const [next, changed] = reorderWithinParent(
-        current,
-        parentId,
-        sourceId,
-        targetId,
-      );
-      return changed ? next : current;
-    });
+    applyChange((current) =>
+      reorderWithinParent(current, parentId, sourceId, targetId),
+    );
   };
 
   const handleBatchComplete = (parentId: string, childIds: string[]) => {
     const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = completeChildrenBatch(
-        current,
-        parentId,
-        targetIds,
-      );
-      return changed ? reconcileTree(next) : current;
-    });
+    applyChange((current) =>
+      completeChildrenBatch(current, parentId, targetIds),
+    );
   };
 
   const handleBatchDelete = (parentId: string, childIds: string[]) => {
     const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = deleteChildrenBatch(
-        current,
-        parentId,
-        targetIds,
-      );
-      return changed ? reconcileTree(next) : current;
-    });
+    applyChange((current) =>
+      deleteChildrenBatch(current, parentId, targetIds),
+    );
   };
 
   const handleUpdatePriority = (id: string, priority: Priority) => {
-    setTodos((current) => {
-      const [next, changed] = updateTodos(current, id, (todo) => ({
+    applyChange((current) =>
+      updateTodos(current, id, (todo) => ({
         ...todo,
         priority,
-      }));
-      return changed ? next : current;
-    });
+      })),
+    );
   };
 
   const handleBatchPriority = (
@@ -204,16 +308,26 @@ export default function HomePage() {
     priority: Priority,
   ) => {
     const targetIds = new Set(childIds);
-    setTodos((current) => {
-      const [next, changed] = updateChildrenPriorityBatch(
-        current,
-        parentId,
-        targetIds,
-        priority,
-      );
-      return changed ? reconcileTree(next) : current;
-    });
+    applyChange((current) =>
+      updateChildrenPriorityBatch(current, parentId, targetIds, priority),
+    );
   };
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-50 text-sm text-slate-600">
+        正在检查登录状态...
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-50 text-sm text-slate-600">
+        尚未登录，正在跳转至登录页...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-slate-50 px-6 py-10 text-slate-900">
@@ -252,6 +366,36 @@ export default function HomePage() {
           </div>
         </header>
 
+        <section className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-white px-4 py-4 text-sm shadow-sm sm:flex-row sm:items-center">
+          <div className="flex-1 space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
+              快捷键提示
+            </p>
+            <p className="text-slate-700">
+              ⌘/Ctrl + Shift + N 新建父 TODO · ⌘/Ctrl + Z 撤销 · ⌘/Ctrl + Shift + E
+              导出 CSV · 在子输入框按 Enter 或 ⌘/Ctrl + Enter 快速创建 · 在子列表内按
+              ⌘/Ctrl + Shift + C 批量完成，⌘/Ctrl + Shift + D 批量删除已选子项。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!hasUndo}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              撤销最近操作
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+            >
+              导出 CSV
+            </button>
+          </div>
+        </section>
+
         <section className="grid gap-4 rounded-xl border border-emerald-100 bg-white p-6 shadow-sm sm:grid-cols-3">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -287,6 +431,7 @@ export default function HomePage() {
               </label>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
+                  ref={newTodoInputRef}
                   value={newTitle}
                   onChange={(event) => setNewTitle(event.target.value)}
                   placeholder="输入要完成的事项"
@@ -376,6 +521,7 @@ function TodoItem({
   const [childFilter, setChildFilter] = useState<ChildFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDraft(todo.title);
@@ -470,6 +616,33 @@ function TodoItem({
     setDraggingChildId(null);
   };
 
+  useEffect(() => {
+    const handleLocalShortcut = (event: KeyboardEvent) => {
+      const target = event.target as Node | null;
+      if (containerRef.current && target && !containerRef.current.contains(target)) {
+        return;
+      }
+      const isMeta = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (isMeta && event.shiftKey && key === "c") {
+        if (!selectedChildIds.length) return;
+        event.preventDefault();
+        handleBatchCompleteClick();
+        return;
+      }
+
+      if (isMeta && event.shiftKey && key === "d") {
+        if (!selectedChildIds.length) return;
+        event.preventDefault();
+        handleBatchDeleteClick();
+      }
+    };
+
+    window.addEventListener("keydown", handleLocalShortcut);
+    return () => window.removeEventListener("keydown", handleLocalShortcut);
+  }, [handleBatchCompleteClick, handleBatchDeleteClick, selectedChildIds]);
+
   const completedChildren = useMemo(
     () => todo.children.filter((child) => child.completed).length,
     [todo.children],
@@ -488,6 +661,7 @@ function TodoItem({
 
   return (
     <div
+      ref={containerRef}
       className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       style={{ marginLeft: depth * 16 }}
     >
@@ -618,6 +792,12 @@ function TodoItem({
             value={childTitle}
             onChange={(event) => setChildTitle(event.target.value)}
             placeholder="添加子 TODO"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addChild();
+              }
+            }}
             className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
           />
           <button
@@ -650,9 +830,9 @@ function TodoItem({
                       : "border border-slate-200 text-slate-700 hover:bg-white"
                   }`}
                 >
-                    {item.label}
-                  </button>
-                ))}
+                  {item.label}
+                </button>
+              ))}
               <span className="ml-2 text-xs font-semibold text-slate-700">
                 优先级
               </span>
